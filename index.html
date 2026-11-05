@@ -53,6 +53,8 @@
     transition: all 0.3s ease;
     box-shadow: 0 2px 16px rgba(21,67,96,0.1);
     max-width: 320px;
+    opacity: 0;
+    pointer-events: none;
   }
   .step-overlay .step-badge {
     display: inline-block; background: #1a5276;
@@ -257,12 +259,12 @@
     </model-viewer>
 
     <!-- Step info -->
-    <!-- <div class="step-overlay" id="stepOverlay">
+    <div class="step-overlay" id="stepOverlay">
       <div class="step-badge" id="stepBadge">Step 0 of 7</div>
       <div class="step-title" id="stepTitle">Equipment Overview</div>
       <div class="step-desc" id="stepDesc">Digital blood pressure monitor with LCD display and arm cuff. Verify the device is calibrated and the cuff size matches the patient's arm circumference.</div>
       <div class="step-action" id="stepAction"></div>
-    </div> -->
+    </div>
 
     <!-- BP Reading -->
     <div class="reading-display" id="readingDisplay">
