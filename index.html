@@ -380,6 +380,7 @@ function setStep(idx) {
   btnPrev.disabled = currentStep === 0;
   btnNext.disabled = currentStep === 7;
   btnPlay.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+  if (window.notifyStoryline) window.notifyStoryline(currentStep);
 }
 
 function setOrbit(key) {
@@ -424,6 +425,31 @@ document.addEventListener('keydown', (e) => {
 
 initNodes();
 setStep(0);
+
+window.addEventListener('message', function(event) {
+  // Seguridad: solo aceptar mensajes desde tu curso o cualquier origen conocido
+  if (event.origin !== 'https://aleja778.github.io' && 
+      event.origin.indexOf('articulate') === -1 &&
+      event.origin.indexOf('your-lms-domain.com') === -1 &&
+      event.origin !== 'null' &&               // archivos locales (file://)
+      event.origin !== window.location.origin) {
+    return;
+  }
+
+  if (event.data && event.data.type === 'bp-step') {
+    stopPlay();
+    setStep(event.data.step);
+  }
+});
+
+// Reportar de vuelta a Storyline cuando el usuario interactúa dentro del HTML
+window.notifyStoryline = function(idx) {
+  try {
+    if (window.parent && window.parent !== window && window.parent.GetPlayer) {
+      window.parent.GetPlayer().SetVar('BP_Step', idx);
+    }
+  } catch(e) {}
+};
 </script>
 </body>
 </html>
