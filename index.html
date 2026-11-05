@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blood Pressure Monitor - 3D Interactive</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: linear-gradient(160deg, #e8f4f8 0%, #d0e8f5 30%, #b8dce8 60%, #a8d0e6 100%);
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  #viewer-wrap {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  model-viewer {
+    width: 100%; height: 100%;
+    background: transparent;
+    --poster-color: transparent;
+  }
+  .loading-screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #154360; font-size: 1rem; z-index: 10;
+    background: linear-gradient(180deg, #e8f4f8, #c8e0ec);
+    transition: opacity 0.5s;
+  }
+  .loading-screen.fade-out { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 48px; height: 48px;
+    border: 4px solid #aed6f1;
+    border-top-color: #1a5276;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Step info overlay */
+  .step-overlay {
+    position: absolute; top: 16px; left: 16px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(8px);
+    padding: 14px 18px; border-radius: 14px;
+    border: 1px solid #aed6f1;
+    z-index: 5;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 16px rgba(21,67,96,0.1);
+    max-width: 320px;
+  }
+  .step-overlay .step-badge {
+    display: inline-block; background: #1a5276;
+    color: white; padding: 3px 10px; border-radius: 12px;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .step-overlay .step-title {
+    font-weight: 700; color: #1a3a5c; font-size: 1.05rem;
+    margin-bottom: 6px;
+  }
+  .step-overlay .step-desc {
+    color: #4a6fa5; font-size: 0.85rem;
+    line-height: 1.55;
+  }
+  .step-overlay .step-action {
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed #aed6f1;
+    font-size: 0.82rem; color: #27ae60; font-weight: 600;
+  }
+
+  /* Reading display */
+  .reading-display {
+    position: absolute; top: 16px; right: 16px;
+    background: rgba(26,82,118,0.95);
+    backdrop-filter: blur(8px);
+    padding: 16px 22px; border-radius: 14px;
+    border: 1px solid #3498db;
+    z-index: 5;
+    transition: all 0.4s ease;
+    box-shadow: 0 4px 20px rgba(21,67,96,0.3);
+    text-align: center;
+    min-width: 160px;
+    opacity: 0; transform: translateY(-10px); pointer-events: none;
+  }
+  .reading-display.show {
+    opacity: 1; transform: translateY(0); pointer-events: auto;
+  }
+  .reading-display .label {
+    color: #aed6f1; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.8px; margin-bottom: 6px;
+  }
+  .reading-display .value {
+    color: white; font-size: 2.2rem; font-weight: 700; line-height: 1;
+  }
+  .reading-display .unit {
+    color: #aed6f1; font-size: 0.82rem; margin-top: 4px;
+  }
+  .reading-display .status {
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(174,214,241,0.3);
+    font-size: 0.78rem; font-weight: 600;
+  }
+  .status-normal { color: #2ecc71; }
+  .status-elevated { color: #f39c12; }
+  .status-high { color: #e74c3c; }
+
+  /* Slider card */
+  .slider-card {
+    position: absolute; bottom: 16px; left: 16px; right: 16px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(12px);
+    border-radius: 16px;
+    padding: 16px 20px;
+    border: 1px solid #aed6f1;
+    z-index: 5;
+    box-shadow: 0 4px 24px rgba(21,67,96,0.1);
+  }
+  .slider-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .slider-title { font-size: 0.92rem; font-weight: 700; color: #1a3a5c; }
+  .slider-progress { font-size: 0.82rem; color: #1a5276; font-weight: 700; }
+
+  .stage-track {
+    display: flex; justify-content: space-between;
+    margin-bottom: 8px; position: relative;
+    padding: 0 8px;
+  }
+  .stage-node {
+    display: flex; flex-direction: column; align-items: center;
+    cursor: pointer; position: relative; z-index: 2;
+    transition: transform 0.2s;
+  }
+  .stage-node:hover { transform: translateY(-2px); }
+  .stage-node .node-circle {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #dfe6e9; border: 2px solid #dfe6e9;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; color: #636e72;
+    transition: all 0.4s ease;
+  }
+  .stage-node.active .node-circle {
+    background: #1a5276; border-color: #154360;
+    color: white; transform: scale(1.15);
+    box-shadow: 0 3px 10px rgba(26,82,118,0.4);
+  }
+  .stage-node.completed .node-circle {
+    background: #27ae60; border-color: #27ae60; color: white;
+  }
+  .stage-node .node-label {
+    font-size: 0.62rem; color: #636e72;
+    margin-top: 4px; text-align: center; max-width: 50px;
+    line-height: 1.1; font-weight: 500;
+    transition: color 0.3s;
+  }
+  .stage-node.active .node-label { color: #1a5276; font-weight: 700; }
+  .stage-line {
+    position: absolute; top: 14px; left: 22px; right: 22px;
+    height: 3px; background: #dfe6e9; border-radius: 2px; z-index: 1;
+  }
+  .stage-line-fill {
+    height: 100%; background: linear-gradient(90deg, #27ae60, #1a5276);
+    border-radius: 2px; transition: width 0.5s ease; width: 0%;
+  }
+
+  input[type=range].main-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 10px; border-radius: 5px;
+    background: linear-gradient(to right, #1a5276 0%, #1a5276 var(--progress, 0%), #dfe6e9 var(--progress, 0%), #dfe6e9 100%);
+    outline: none; cursor: pointer;
+  }
+  input[type=range].main-slider:focus-visible {
+    box-shadow: 0 0 0 3px rgba(26,82,118,0.2); border-radius: 5px;
+  }
+  input[type=range].main-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: white; border: 3px solid #1a5276;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); cursor: grab;
+    transition: transform 0.15s;
+  }
+  input[type=range].main-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  .controls-row {
+    display: flex; gap: 8px; justify-content: center;
+    margin-top: 10px;
+  }
+  .btn {
+    padding: 6px 14px; border-radius: 8px;
+    border: 2px solid #dfe6e9; background: white;
+    color: #1a3a5c; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; outline: none;
+  }
+  .btn:hover { background: #eaf2f8; border-color: #1a5276; }
+  .btn.primary { background: #1a5276; color: white; border-color: #1a5276; }
+  .btn.primary:hover { background: #154360; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .view-btns {
+    display: flex; gap: 6px;
+  }
+  .view-btn {
+    padding: 5px 12px; border-radius: 6px;
+    border: 1px solid #aed6f1; background: rgba(255,255,255,0.8);
+    color: #4a6fa5; font-size: 0.75rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .view-btn:hover { background: white; border-color: #1a5276; color: #1a5276; }
+  .view-btn.active { background: #1a5276; color: white; border-color: #154360; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.3s ease forwards; }
+
+  @media (max-width: 600px) {
+    .step-overlay { max-width: 200px; padding: 10px 12px; }
+    .step-overlay .step-title { font-size: 0.9rem; }
+    .step-overlay .step-desc { font-size: 0.78rem; }
+    .reading-display { padding: 12px 16px; min-width: 120px; }
+    .reading-display .value { font-size: 1.6rem; }
+    .slider-card { padding: 12px 14px; }
+    .stage-node .node-label { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div id="viewer-wrap">
+    <!-- Loading -->
+    <div class="loading-screen" id="loadingScreen">
+      <div class="spinner"></div>
+      <div>Loading 3D Blood Pressure Monitor...</div>
+      <div style="font-size:0.8rem;color:#7f8c8d;margin-top:8px;">This may take a few seconds</div>
+    </div>
+
+    <!-- 3D Model Viewer -->
+    <model-viewer
+      id="mv"
+      src="models/blood_pressure_monitor.glb"
+      alt="3D digital blood pressure monitor with LCD display and arm cuff"
+      camera-controls
+      auto-rotate
+      auto-rotate-delay="2000"
+      rotation-per-second="20deg"
+      shadow-intensity="1"
+      exposure="1.1"
+      camera-orbit="0deg 75deg 2.5m"
+      min-camera-orbit="auto auto 1.5m"
+      max-camera-orbit="auto auto 4m"
+      environment-image="neutral"
+      interaction-prompt="none">
+    </model-viewer>
+
+    <!-- Step info -->
+    <div class="step-overlay" id="stepOverlay">
+      <div class="step-badge" id="stepBadge">Step 0 of 7</div>
+      <div class="step-title" id="stepTitle">Equipment Overview</div>
+      <div class="step-desc" id="stepDesc">Digital blood pressure monitor with LCD display and arm cuff. Verify the device is calibrated and the cuff size matches the patient's arm circumference.</div>
+      <div class="step-action" id="stepAction"></div>
+    </div>
+
+    <!-- BP Reading -->
+    <div class="reading-display" id="readingDisplay">
+      <div class="label">Blood Pressure</div>
+      <div class="value" id="bpValue">120/80</div>
+      <div class="unit">mmHg</div>
+      <div class="status status-normal" id="bpStatus">Normal | Pulse 72 bpm</div>
+    </div>
+
+    <!-- Slider + Controls -->
+    <div class="slider-card">
+      <div class="slider-header">
+        <div class="slider-title">Blood Pressure Measurement Procedure</div>
+        <div class="slider-progress" id="stageProgress">0%</div>
+      </div>
+
+      <div class="stage-track" id="stageTrack">
+        <div class="stage-line"><div class="stage-line-fill" id="stageLineFill"></div></div>
+      </div>
+
+      <input type="range" class="main-slider" id="stageSlider" min="0" max="7" value="0" step="1"
+        aria-label="Procedure step slider. Use arrow keys to navigate.">
+
+      <div class="controls-row">
+        <div class="view-btns">
+          <button class="view-btn" id="btnSide">Side</button>
+          <button class="view-btn" id="btn34">3/4</button>
+          <button class="view-btn active" id="btnFront">Front</button>
+        </div>
+        <div style="flex:1"></div>
+        <button class="btn" id="btnPrev">&#9664; Prev</button>
+        <button class="btn primary" id="btnPlay">&#9654; Play</button>
+        <button class="btn" id="btnNext">Next &#9654;</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const STEPS = [
+  { title: 'Equipment Overview', desc: 'Digital blood pressure monitor with LCD display and arm cuff. Verify the device is calibrated and the cuff size matches the patient\'s arm circumference.', action: '', progress: 0, showReading: false },
+  { title: 'Patient Preparation', desc: 'Have the patient sit comfortably with back supported, feet flat on the floor. Arm should be bare and supported at heart level. Patient should rest for 5 minutes before measurement.', action: 'Ensure patient has not exercised, smoked, or consumed caffeine in the last 30 minutes.', progress: 14, showReading: false },
+  { title: 'Apply the Cuff', desc: 'Wrap the cuff snugly around the upper arm, about 2-3 cm above the elbow crease. The cuff bladder should be centered over the brachial artery.', action: 'Use the correct cuff size: bladder should cover 80% of arm circumference.', progress: 28, showReading: false },
+  { title: 'Position Correctly', desc: 'The patient\'s arm should rest on a flat surface at heart level, palm facing up. The patient should not talk during measurement.', action: 'Arm must be relaxed and supported. Do not let the patient hold their arm up.', progress: 42, showReading: false },
+  { title: 'Start Measurement', desc: 'Press the START button. The cuff will automatically inflate and deflate. Remain still and quiet during the measurement process.', action: 'Wait for the device to complete the full cycle. Do not move or talk.', progress: 56, showReading: false },
+  { title: 'Read the Results', desc: 'The display shows systolic pressure (top number) over diastolic pressure (bottom number) in mmHg, plus the pulse rate.', action: 'Record both numbers: systolic (top) and diastolic (bottom).', progress: 70, showReading: true, reading: { s: 120, d: 80, p: 72, status: 'Normal', cls: 'status-normal' } },
+  { title: 'Interpret Values', desc: 'Normal: <120/80 mmHg. Elevated: 120-129/<80. Stage 1 HTN: 130-139 or 80-89. Stage 2 HTN: \u2265140 or \u226590.', action: 'If reading is high, repeat after 1-2 minutes of rest. Take 2-3 readings and average them.', progress: 84, showReading: true, reading: { s: 128, d: 78, p: 75, status: 'Elevated', cls: 'status-elevated' } },
+  { title: 'Document & Follow-Up', desc: 'Record the date, time, arm used, position, and readings. Report abnormal values to the healthcare provider. Schedule regular monitoring.', action: 'Document in the patient\'s chart. Alert provider if BP \u2265180/120 or \u226490/60.', progress: 100, showReading: true, reading: { s: 120, d: 80, p: 72, status: 'Normal', cls: 'status-normal' } }
+];
+
+const ORBITS = { side: '90deg 75deg 2.5m', mid: '45deg 75deg 2.5m', front: '0deg 75deg 2.5m' };
+
+let currentStep = 0, isPlaying = false, playTimer = null;
+
+const mv = document.getElementById('mv');
+const loadingScreen = document.getElementById('loadingScreen');
+const stepBadge = document.getElementById('stepBadge');
+const stepTitle = document.getElementById('stepTitle');
+const stepDesc = document.getElementById('stepDesc');
+const stepAction = document.getElementById('stepAction');
+const stageProgress = document.getElementById('stageProgress');
+const stageLineFill = document.getElementById('stageLineFill');
+const readingDisplay = document.getElementById('readingDisplay');
+const bpValue = document.getElementById('bpValue');
+const bpStatus = document.getElementById('bpStatus');
+const stageSlider = document.getElementById('stageSlider');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const btnPlay = document.getElementById('btnPlay');
+const btnSide = document.getElementById('btnSide');
+const btn34 = document.getElementById('btn34');
+const btnFront = document.getElementById('btnFront');
+
+function initNodes() {
+  const track = document.getElementById('stageTrack');
+  const labels = ['Start','Prep','Cuff','Position','Measure','Read','Interpret','Doc'];
+  labels.forEach((lbl, i) => {
+    const node = document.createElement('div');
+    node.className = 'stage-node' + (i === 0 ? ' active' : '');
+    node.innerHTML = `<div class="node-circle">${i}</div><div class="node-label">${lbl}</div>`;
+    node.addEventListener('click', () => { stopPlay(); setStep(i); });
+    track.appendChild(node);
+  });
+}
+
+function setStep(idx) {
+  currentStep = Math.max(0, Math.min(7, idx));
+  const step = STEPS[currentStep];
+
+  stageSlider.value = currentStep;
+  const pct = (currentStep / 7) * 100;
+  stageSlider.style.setProperty('--progress', pct + '%');
+  stageProgress.textContent = step.progress + '%';
+  stageLineFill.style.width = step.progress + '%';
+
+  stepBadge.textContent = 'Step ' + currentStep + ' of 7';
+  stepTitle.textContent = step.title;
+  stepDesc.textContent = step.desc;
+  if (step.action) { stepAction.textContent = 'Action: ' + step.action; stepAction.style.display = 'block'; }
+  else { stepAction.style.display = 'none'; }
+
+  document.querySelectorAll('.stage-node').forEach((n, i) => {
+    n.classList.toggle('active', i === currentStep);
+    n.classList.toggle('completed', i < currentStep);
+  });
+
+  if (step.showReading && step.reading) {
+    readingDisplay.classList.add('show');
+    bpValue.textContent = step.reading.s + '/' + step.reading.d;
+    bpStatus.textContent = step.reading.status + ' | Pulse ' + step.reading.p + ' bpm';
+    bpStatus.className = 'status ' + step.reading.cls;
+  } else {
+    readingDisplay.classList.remove('show');
+  }
+
+  btnPrev.disabled = currentStep === 0;
+  btnNext.disabled = currentStep === 7;
+  btnPlay.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+}
+
+function setOrbit(key) {
+  mv.cameraOrbit = ORBITS[key];
+  btnSide.classList.toggle('active', key === 'side');
+  btn34.classList.toggle('active', key === 'mid');
+  btnFront.classList.toggle('active', key === 'front');
+}
+
+function stopPlay() {
+  isPlaying = false;
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+  setStep(currentStep);
+}
+
+function togglePlay() {
+  if (isPlaying) { stopPlay(); return; }
+  isPlaying = true; setStep(currentStep);
+  playTimer = setInterval(() => {
+    if (currentStep >= 7) { currentStep = 0; }
+    else { currentStep++; }
+    setStep(currentStep);
+    if (currentStep === 7) stopPlay();
+  }, 2500);
+}
+
+mv.addEventListener('load', () => loadingScreen.classList.add('fade-out'));
+setTimeout(() => loadingScreen.classList.add('fade-out'), 10000);
+
+stageSlider.addEventListener('input', (e) => { stopPlay(); setStep(parseInt(e.target.value)); });
+btnPrev.addEventListener('click', () => { stopPlay(); setStep(currentStep - 1); });
+btnNext.addEventListener('click', () => { stopPlay(); setStep(currentStep + 1); });
+btnPlay.addEventListener('click', togglePlay);
+btnSide.addEventListener('click', () => setOrbit('side'));
+btn34.addEventListener('click', () => setOrbit('mid'));
+btnFront.addEventListener('click', () => setOrbit('front'));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key >= '1' && e.key <= '8') { stopPlay(); setStep(parseInt(e.key) - 1); }
+  if (e.key === 'Escape') stopPlay();
+});
+
+initNodes();
+setStep(0);
+</script>
+</body>
+</html>
